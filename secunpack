@@ -1,0 +1,32 @@
+#!/usr/bin/env zsh
+# 복호화 + 압축 해제 (진행률 표시)
+# Usage: secunpack <encrypted_file> [output_directory]
+
+if [[ -z "$1" ]]; then
+  echo "Usage: secunpack <encrypted_file> [output_directory]"
+  exit 1
+fi
+
+input="$1"
+outdir="${2:-.}"
+
+if [[ ! -f "$input" ]]; then
+  echo "Error: '$input' does not exist"
+  exit 1
+fi
+
+size=$(stat -c%s "$input" 2>/dev/null)
+
+if command -v pv &>/dev/null; then
+  pv -s "$size" -N "Decrypting" "$input" | gpg --decrypt 2>/dev/null | \
+    pv -N "Extracting" | tar -xzf - -C "$outdir"
+else
+  gpg --decrypt "$input" 2>/dev/null | tar -xzf - -C "$outdir"
+fi
+
+if [[ $? -eq 0 ]]; then
+  echo "Decrypted to: $outdir"
+else
+  echo "Decryption failed"
+  exit 1
+fi

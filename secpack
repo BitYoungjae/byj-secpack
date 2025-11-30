@@ -1,0 +1,66 @@
+#!/usr/bin/env zsh
+# 파일/디렉터리 압축 + AES-256 암호화 (진행률 표시)
+# Usage: secpack <files...> [-o output_name]
+
+if [[ -z "$1" ]]; then
+  echo "Usage: secpack <files...> [-o output_name]"
+  echo "  secpack file1.txt file2.txt           # -> archive.enc"
+  echo "  secpack folder1 folder2 -o backup.enc # -> backup.enc"
+  exit 1
+fi
+
+output="archive.enc"
+targets=()
+
+# 인자 파싱
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      output="$2"
+      shift 2
+      ;;
+    *)
+      if [[ -e "$1" ]]; then
+        targets+=("$1")
+      else
+        echo "Error: '$1' does not exist"
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ ${#targets[@]} -eq 0 ]]; then
+  echo "Error: No valid files or directories specified"
+  exit 1
+fi
+
+# 파일이 하나면 그 이름 기반으로 출력 파일명 설정
+if [[ ${#targets[@]} -eq 1 && "$output" == "archive.enc" ]]; then
+  output="${targets[1]%.}.enc"
+fi
+
+echo "Packing: ${targets[@]}"
+size=$(du -sb "${targets[@]}" 2>/dev/null | tail -1 | cut -f1)
+
+# -C 옵션용 인자 생성 (절대경로 → 상대경로 변환)
+tar_args=()
+for t in "${targets[@]}"; do
+  abs_path=$(realpath "$t")
+  tar_args+=(-C "$(dirname "$abs_path")" "$(basename "$abs_path")")
+done
+
+if command -v pv &>/dev/null; then
+  tar -cf - "${tar_args[@]}" | pv -s "$size" -N "Compressing" | gzip | \
+    pv -N "Encrypting" | gpg --symmetric --cipher-algo AES256 -o "$output"
+else
+  tar -czf - "${tar_args[@]}" | gpg --symmetric --cipher-algo AES256 -o "$output"
+fi
+
+if [[ $? -eq 0 ]]; then
+  echo "Encrypted: $output"
+else
+  echo "Encryption failed"
+  exit 1
+fi
